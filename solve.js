@@ -117,7 +117,7 @@ for (const c of [9, 10, 11, 12, 13, 32, 0xa0]) WS_TABLE[c] = 1;
 /** The words of a body: its runs of characters other than whitespace. Branch-free on purpose: whether a
  * character is whitespace flips at every word boundary, which the branch predictor cannot learn, while the
  * arithmetic form (count a word exactly when a non-whitespace character follows a whitespace state) has no
- * branch to miss. Measured ~17 ms per cold run faster than the branching form. */
+ * branch to miss. Measured ~19 ms per cold run faster than the branching form (interleaved, per-round diffs). */
 function wordsOf(text) {
   let count = 0;
   let inRun = 0;
