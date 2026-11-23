@@ -496,8 +496,6 @@ function isFenceClose(line) {
 }
 
 /** A heading line's level and text, or null (a heading's text is never empty). */
-const HEAD_SCRATCH = { depth: 0, text: '' };
-
 function headingOf(line) {
   let depth = 0;
   while (depth < line.length && line.charCodeAt(depth) === 35) depth++;
@@ -517,10 +515,7 @@ function headingOf(line) {
     end--;
   }
   if (end === start) return null;
-  // The scratch is safe: every caller reads the fields before any other headingOf call.
-  HEAD_SCRATCH.depth = depth;
-  HEAD_SCRATCH.text = line.slice(start, end);
-  return HEAD_SCRATCH;
+  return { depth, text: line.slice(start, end) };
 }
 
 function isHr(line) {
@@ -533,30 +528,17 @@ function isHr(line) {
 }
 
 /** A list item line: { ordered, start, text } or null. */
-const ITEM_SCRATCH = { ordered: false, start: 1, text: '' };
-
 function listItemOf(line) {
   const c0 = line.charCodeAt(0);
-  if ((c0 === 45 || c0 === 42) && line.charCodeAt(1) === 32) {
-    // The scratch is safe: every caller reads the fields before any other listItemOf call
-    // (renderList copies ordered/start out of `first` before its own loop starts).
-    ITEM_SCRATCH.ordered = false;
-    ITEM_SCRATCH.start = 1;
-    ITEM_SCRATCH.text = line.slice(2);
-    return ITEM_SCRATCH;
-  }
+  if ((c0 === 45 || c0 === 42) && line.charCodeAt(1) === 32) return { ordered: false, start: 1, text: line.slice(2) };
   let d = 0;
   while (d < line.length) {
     const c = line.charCodeAt(d);
     if (c >= 48 && c <= 57) d++;
     else break;
   }
-  if (d >= 1 && d <= 9 && line.charCodeAt(d) === 46 && line.charCodeAt(d + 1) === 32) {
-    ITEM_SCRATCH.ordered = true;
-    ITEM_SCRATCH.start = Number(line.slice(0, d));
-    ITEM_SCRATCH.text = line.slice(d + 2);
-    return ITEM_SCRATCH;
-  }
+  if (d >= 1 && d <= 9 && line.charCodeAt(d) === 46 && line.charCodeAt(d + 1) === 32)
+    return { ordered: true, start: Number(line.slice(0, d)), text: line.slice(d + 2) };
   return null;
 }
 
