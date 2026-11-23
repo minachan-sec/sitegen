@@ -11,8 +11,11 @@ import { setFlagsFromString } from 'node:v8';
 // baseline runs with --no-incremental-marking, and an entry may tune V8's flags too). TurboFan off as well: in a fresh
 // process over three cases its optimising compiles cost more CPU than the execution they save, and Maglev carries the run.
 // Lazy compilation off for the same reason: every function here is called, so compiling them all up front is cheaper
-// than paying the lazy-compile checks and late compiles along the way.
-setFlagsFromString('--no-incremental-marking --no-turbofan --no-lazy');
+// than paying the lazy-compile checks and late compiles along the way. Round 3 added two more, each measured against
+// this set in interleaved cold runs: a 128 MB semi-space cap (the build allocates hard; fewer, cheaper scavenges) and
+// --maglev-future (Maglev's staging bundle). --maglev-future goes last on purpose: were a future V8 to drop the flag,
+// only it would be ignored, never the proven flags before it.
+setFlagsFromString('--no-incremental-marking --no-turbofan --no-lazy --max-semi-space-size=128 --maglev-future');
 
 /** solve.js, imported by its URL (a .js module carries no types) and typed by its contract. */
 const { run } = (await import(new URL('./solve.js', import.meta.url).href)) as { run: (input: unknown) => unknown };
