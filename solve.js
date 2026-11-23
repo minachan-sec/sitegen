@@ -928,120 +928,16 @@ function renderNodes(nodes, scope, ctx, depth, out) {
   }
 }
 
-// ---------------------------------------------------------------- template codegen
+// ---------------------------------------------------------------- template rendering
 
 /**
- * A template entry rendered: its compiled function when it has one, compiled lazily on first use; a
- * template whose generated source does not compile falls back to the node interpreter for good.
+ * A template entry rendered by the node interpreter. (Round 4 removed the compiled-template
+ * path: in a fresh process the per-template `new Function` compiles cost more CPU than the
+ * execution they saved - the interpreter alone measured ~19 ms per cold run faster,
+ * interleaved, across two windows.)
  */
 function renderEntry(entry, scope, ctx, depth, out) {
-  let fn = entry.fn;
-  if (fn === null) {
-    try {
-      fn = entry.fn = compileTemplate(entry.nodes);
-    } catch {
-      fn = entry.fn = false;
-    }
-  }
-  if (fn === false) renderNodes(entry.nodes, scope, ctx, depth, out);
-  else fn(scope, ctx, depth, out);
-}
-
-const CODEGEN_HELPERS = { esc, textOf, truthy, lookup, renderInclude, hasOwn };
-
-/**
- * `nodes` compiled into a bespoke render function. Names bound by an enclosing for in the same template
- * become JavaScript locals (v$<name>); every other head resolves through the dynamic scope chain, exactly
- * as the interpreter's lookup does, and an include materialises the locals it must hand over into a scope
- * object. The generated statements mirror renderNodes case by case, including the lookup tail rule (own
- * properties of objects only) and the for-vars collision rule (a variable named "loop" is the loop info).
- */
-function compileTemplate(nodes) {
-  const paths = [];
-  const chunks = [];
-  const bound = new Map();
-  const isBound = (n) => bound.has(n);
-  const bind = (n) => bound.set(n, (bound.get(n) ?? 0) + 1);
-  const unbind = (n) => {
-    const c = bound.get(n) - 1;
-    if (c === 0) bound.delete(n);
-    else bound.set(n, c);
-  };
-
-  // Statements computing the value of path `p` into t$.
-  const emitValue = (p) => {
-    if (!isBound(p[0])) {
-      paths.push(p);
-      chunks.push(`t$ = lookup(scope, P[${paths.length - 1}]);`);
-      return;
-    }
-    chunks.push(`t$ = v$${p[0]};`);
-    for (let k = 1; k < p.length; k++)
-      chunks.push(
-        `t$ = t$ !== null && typeof t$ === 'object' && hasOwn(t$, ${JSON.stringify(p[k])}) ? t$[${JSON.stringify(p[k])}] : undefined;`,
-      );
-  };
-
-  const emitNodes = (ns) => {
-    for (const n of ns) {
-      switch (n.kind) {
-        case 'text':
-          chunks.push(`out.push(${JSON.stringify(n.text)});`);
-          break;
-        case 'var':
-          emitValue(n.path);
-          chunks.push('out.push(esc(textOf(t$)));');
-          break;
-        case 'raw':
-          emitValue(n.path);
-          chunks.push('out.push(textOf(t$));');
-          break;
-        case 'if': {
-          emitValue(n.path);
-          chunks.push(`if (truthy(t$) !== ${n.not}) {`);
-          emitNodes(n.then);
-          if (n.else !== null) {
-            chunks.push('} else {');
-            emitNodes(n.else);
-          }
-          chunks.push('}');
-          break;
-        }
-        case 'for': {
-          emitValue(n.path);
-          chunks.push('if (Array.isArray(t$)) {');
-          chunks.push('const xs$ = t$;');
-          chunks.push('const len$ = xs$.length;');
-          chunks.push('for (let k$ = 0; k$ < len$; k$++) {');
-          if (n.name !== 'loop') chunks.push(`let v$${n.name} = xs$[k$];`);
-          chunks.push('let v$loop = { index: k$ + 1, first: k$ === 0, last: k$ === len$ - 1, length: len$ };');
-          bind(n.name);
-          bind('loop');
-          emitNodes(n.body);
-          unbind('loop');
-          unbind(n.name);
-          chunks.push('}');
-          chunks.push('}');
-          break;
-        }
-        case 'include': {
-          if (bound.size === 0) {
-            chunks.push(`renderInclude(${JSON.stringify(n.name)}, scope, ctx, depth, out);`);
-          } else {
-            const parts = [];
-            for (const name of bound.keys()) parts.push(`${JSON.stringify(name)}: v$${name}`);
-            chunks.push(
-              `renderInclude(${JSON.stringify(n.name)}, { vars: { ${parts.join(', ')} }, parent: scope }, ctx, depth, out);`,
-            );
-          }
-          break;
-        }
-      }
-    }
-  };
-  emitNodes(nodes);
-  const body = `const { esc, textOf, truthy, lookup, renderInclude, hasOwn } = H;\nreturn function (scope, ctx, depth, out) {\nlet t$;\n${chunks.join('\n')}\n};`;
-  return new Function('H', 'P', body)(CODEGEN_HELPERS, paths);
+  renderNodes(entry.nodes, scope, ctx, depth, out);
 }
 
 // ---------------------------------------------------------------- the build
@@ -1108,7 +1004,7 @@ function build(input) {
   const report = [];
   for (const name of Object.keys(input.templates).sort(byCodeUnits)) {
     try {
-      templates.set(name, { nodes: parseTemplate(name, input.templates[name]), fn: null });
+      templates.set(name, { nodes: parseTemplate(name, input.templates[name]) });
     } catch (err) {
       if (!(err instanceof TemplateError)) throw err;
       report.push(err.message);
